@@ -1,5 +1,6 @@
 services:
-  api:
+  authenticator:
+    container_name: authenticator
     build: .
     env_file:
       - .env
