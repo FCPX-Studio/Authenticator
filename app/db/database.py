@@ -17,8 +17,8 @@ def _default_session_factory() -> sessionmaker[Session]:
     Every repository shares the same connection pool.
     """
     engine = create_engine(
-        settings.POSTGRES_URL,
-        pool_size=settings.POSTGRES_POOL_SIZE,
+        settings.DB_URL.get_secret_value(),
+        pool_size=settings.DB_SIZE,
         pool_pre_ping=True,
     )
     return sessionmaker(engine, expire_on_commit=False)

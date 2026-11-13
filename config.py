@@ -4,7 +4,9 @@ Application configuration
 This module exposes a singleton `settings` instance that can be imported
 throughout the project (e.g., from config import settings).
 """
-from pydantic import SecretStr, Field
+from urllib.parse import quote_plus
+
+from pydantic import SecretStr, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,11 +24,27 @@ class AuthenticatorSettings(BaseSettings):
     APP_VERSION: str = "1.0"
 
     # Database
-    POSTGRES_URL: str = ""
-    POSTGRES_POOL_SIZE: int = 5
+    DB_HOST: SecretStr
+    DB_PORT: SecretStr
+    DB_NAME: SecretStr
+    DB_USER: SecretStr
+    DB_PASSWORD: SecretStr
+
+    DB_SIZE: int = 5
+
+    @computed_field
+    @property
+    def DB_URL(self) -> SecretStr:
+        # Quote user/password so characters like @ : / # don't break the URL
+        user = quote_plus(self.DB_USER.get_secret_value())
+        password = quote_plus(self.DB_PASSWORD.get_secret_value())
+        host = self.DB_HOST.get_secret_value()
+        port = self.DB_PORT.get_secret_value()
+        name = self.DB_NAME.get_secret_value()
+        return SecretStr(f"postgresql+psycopg://{user}:{password}@{host}:{port}/{name}")
 
     # Licensing
-    LICENSE_PRIVATE_KEY: SecretStr = Field(..., alias="license_private_key")
+    LICENSE_PRIVATE_KEY: SecretStr
     LICENSE_TOKEN_FORMAT_VERSION: int = 1
 
 
