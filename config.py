@@ -8,7 +8,7 @@ from pydantic import SecretStr, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class MLSettings(BaseSettings):
+class AuthenticatorSettings(BaseSettings):
     # Load .env
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -21,8 +21,14 @@ class MLSettings(BaseSettings):
     APP_DESCRIPTION: str = "Manage authentication and product licensing"
     APP_VERSION: str = "1.0"
 
+    # Database
+    POSTGRES_URL: str = ""
+    POSTGRES_POOL_SIZE: int = 5
+
+    # Licensing
     LICENSE_PRIVATE_KEY: SecretStr = Field(..., alias="license_private_key")
+    LICENSE_TOKEN_FORMAT_VERSION: int = 1
 
 
 
-settings = MLSettings() # type: ignore
+settings = AuthenticatorSettings() # type: ignore
