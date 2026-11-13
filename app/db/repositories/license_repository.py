@@ -28,6 +28,7 @@ class LicenseRepository(Database):
             activation_limit=row.activation_limit,
             customer_email=row.customer_email,  # type: ignore[arg-type]
             order_id=row.order_id,  # type: ignore[arg-type]
+            item_id=row.item_id,  # type: ignore[arg-type]
             created_at=row.created_at,
             expires_at=row.expires_at,  # type: ignore[arg-type]
         )
@@ -73,6 +74,24 @@ class LicenseRepository(Database):
         with self.session() as s:
             row = s.scalar(select(LicenseRow).where(LicenseRow.license_key == license_key))
             return self._to_license(row) if row else None
+
+    def get_order_licenses(self, order_id: str) -> Optional[list[License]]:
+        """
+        Retrieve every license created for an order
+
+        Args:
+            order_id (str): Order ID
+
+        Returns:
+            Optional[list[License]]: Licenses of the order, None if the order has no license
+        """
+        with self.session() as s:
+            rows = s.scalars(
+                select(LicenseRow)
+                .where(LicenseRow.order_id == order_id)
+                .order_by(LicenseRow.created_at, LicenseRow.id)
+            ).all()
+            return [self._to_license(r) for r in rows] or None
 
     def get_license_activations(self, license_key: str) -> list[LicenseActivation]:
         """
@@ -132,31 +151,59 @@ class LicenseRepository(Database):
 
     # --- WRITE
 
-    def save_license(self, license: License) -> str:
+    def save_licenses(self, licenses: list[License]) -> list[str]:
         """
-        Save a license in DB
+        Save licenses in DB, in a single transaction (all or nothing)
+        If a license already exists for the same order and line item, it is left
+        untouched and the key of the existing license is returned instead
 
         Args:
-            license (License): License to save
+            licenses (list[License]): Licenses to save
 
         Returns:
-            str: Created license ID
+            list[str]: Stored license keys, in the same order as `licenses`
+
+        Raises:
+            IntegrityError: Any other constraint violation (e.g. license key collision),
+                the whole transaction is rolled back
         """
+        keys: list[str] = []
+
         with self.session() as s:
-            row = LicenseRow(
-                license_key=license.key,
-                product_id=license.product_id,
-                activation_limit=license.activation_limit,
-                customer_email=license.customer_email,
-                order_id=license.order_id,
-                created_at=license.created_at,
-                expires_at=license.expires_at,
-            )
-            if license.id:
-                row.id = license.id
-            s.add(row)
-            s.flush()  # assigns the generated id
-            return row.id
+            for license in licenses:
+                values = dict(
+                    license_key=license.key,
+                    product_id=license.product_id,
+                    activation_limit=license.activation_limit,
+                    customer_email=license.customer_email,
+                    order_id=license.order_id,
+                    item_id=license.item_id,
+                    created_at=license.created_at,
+                    expires_at=license.expires_at,
+                )
+                if license.id:
+                    values["id"] = license.id
+
+                inserted_key = s.scalar(
+                    insert(LicenseRow)
+                    .values(**values)
+                    .on_conflict_do_nothing(constraint="uq_licenses_order_item")
+                    .returning(LicenseRow.license_key)
+                )
+
+                if inserted_key is None:
+                    # Already exists: keep the original license and return its key
+                    inserted_key = s.scalar(
+                        select(LicenseRow.license_key).where(
+                            LicenseRow.order_id == license.order_id,
+                            LicenseRow.item_id == license.item_id,
+                        )
+                    )
+                    assert inserted_key is not None  # conflict guarantees the row exists
+
+                keys.append(inserted_key)
+
+        return keys
 
     def save_activation(self, license_key: str, activation: LicenseActivation) -> str:
         """

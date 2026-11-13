@@ -15,7 +15,11 @@ def _prefixed_id(prefix: str):
 
 class LicenseRow(Base):
     __tablename__ = "licenses"
-    __table_args__ = (CheckConstraint("activation_limit >= 0", name="ck_licenses_activation_limit"),)
+    __table_args__ = (
+        CheckConstraint("activation_limit >= 0", name="ck_licenses_activation_limit"),
+        # Une licence par ligne de commande : un retry du webhook ne crée pas de doublon.
+        UniqueConstraint("order_id", "item_id", name="uq_licenses_order_item"),
+    )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=_prefixed_id("lic"))
     # Secret : stockée en majuscules (format XXXX-XXXX-XXXX-XXXX), jamais placée dans le jeton.
@@ -27,6 +31,8 @@ class LicenseRow(Base):
     # Informations d'achat, pour le support.
     customer_email: Mapped[str | None] = mapped_column(String(320))
     order_id: Mapped[str | None] = mapped_column(String(255))
+    # ID de la ligne de commande fourni par la plateforme de paiement (stable entre les retries).
+    item_id: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     activations: Mapped[list["LicenseActivationRow"]] = relationship(

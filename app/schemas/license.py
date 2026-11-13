@@ -8,9 +8,10 @@ class License(BaseModel):
     id: Optional[str] = None
     key: str
     product_id: str
+    order_id: str
+    item_id: str
     activation_limit: int
-    customer_email: Optional[str] = None
-    order_id: Optional[str] = None
+    customer_email: str
     created_at: datetime
     expires_at: Optional[datetime] = None
 

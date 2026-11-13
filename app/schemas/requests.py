@@ -5,23 +5,29 @@ from typing import Optional
 from datetime import datetime
 
 
-class CreateLicenseRequest(BaseModel):
+class ItemLicenseRequest(BaseModel):
+    item_id: str
     product_id: str
     activation_limit: int
-    customer_email: Optional[str]
-    order_id: Optional[str]
+    customer_email: str
     expires_at: Optional[datetime]
 
-    def build_license(self, key: str) -> License:
+    def build_license(self, key: str, order_id: str) -> License:
         return License(
             key=key,
             product_id=self.product_id,
             activation_limit=self.activation_limit,
             customer_email=self.customer_email,
-            order_id=self.order_id,
+            order_id=order_id,
+            item_id=self.item_id,
             created_at=datetime.now(),
             expires_at=self.expires_at
         )
+
+class OrderLicenseRequest(BaseModel):
+    order_id: str
+    items: list[ItemLicenseRequest]
+    
 
 class ActivateLicenseRequest(BaseModel):
     license_key: str

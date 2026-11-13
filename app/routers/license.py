@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
 
-from app.schemas.requests import CreateLicenseRequest, ActivateLicenseRequest
+from app.schemas.requests import OrderLicenseRequest, ActivateLicenseRequest
 from app.schemas.license import LicenseToken
 from app.schemas.exceptions import InvalideLicenseKeyError, ExpiredLicenseError, ActivationLimitReachedError
 from app.services.licensing import Licensing
@@ -13,12 +13,12 @@ router = APIRouter(
 
 
 @router.post('/create')
-async def create(body: CreateLicenseRequest, request: Request) -> str:
+async def create(body: OrderLicenseRequest, request: Request) -> list[str]:
     """
-    Create a license key for a product
+    Create license keys for an order
 
     Args:
-        body (CreateLicenseRequest): Information about the license to create
+        body (CreateLicenseRequest): Information about the products to license
         request (Request): Default request argument
     """
     licensing: Licensing = request.app.state.licensing
@@ -26,7 +26,7 @@ async def create(body: CreateLicenseRequest, request: Request) -> str:
     #TODO: Protect access 
     # (/create can only be called from fcpxstudio webside when a product is bought)
 
-    license_key = licensing.create_license(body)
+    license_key = licensing.create_licenses(body)
     
     return license_key
 

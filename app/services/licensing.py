@@ -1,6 +1,6 @@
 from config import settings
 
-from app.schemas.requests import CreateLicenseRequest, ActivateLicenseRequest
+from app.schemas.requests import OrderLicenseRequest, ItemLicenseRequest, ActivateLicenseRequest
 from app.schemas.license import License, LicenseToken
 from app.schemas.exceptions import InvalideLicenseKeyError, ExpiredLicenseError, ActivationLimitReachedError
 from app.db.repositories import LicenseRepository
@@ -60,30 +60,58 @@ class Licensing:
         
         return self._now() >= license.expires_at
 
-    def create_license(
+    def _create_item_license(
             self,
-            creation_request: CreateLicenseRequest
-        ) -> str:
+            order_id: str,
+            item_request: ItemLicenseRequest
+        ) -> License:
         """
-        Create a license, save it in DB and return its key
+        Create a license for a specific item, save it in DB and return its key
 
         Args:
-            product_id (str): Id of the product to link to license
-            activation_limit (int): Maximum number of machine allowed on this license
+            order_id (str): ID of the order
+            item_request (ItemLicenseRequest): License request for a specific item
 
         Returns:
-            str: License key: normalized UUID (XXXX-XXXX-XXXX-XXXX)
+            License: Created license
         """
         # Create a unique license key
         while True:
             key = self.keytool.generate_cuuid()
             if not self.repository.license_key_exists(key):
                 break
+        
+        # Build license
+        license = item_request.build_license(key, order_id)
 
-        license = creation_request.build_license(key)
-        self.repository.save_license(license)
+        return license
+    
+    def create_licenses(
+            self,
+            order_request: OrderLicenseRequest
+        ) -> list[str]:  
+        """
+        Create licenses for each items of an order
 
-        return license.key
+        Args:
+            order_request (OrderLicenseRequest): Order license creation request
+
+        Returns:
+            list[str]: License keys, normalized UUID (XXXX-XXXX-XXXX-XXXX)
+        """
+        # Prevent duplicate licenses for a single order
+        order_licenses = self.repository.get_order_licenses(order_request.order_id)
+        if order_licenses:
+            return [lcs.key for lcs in order_licenses]
+
+        licenses = [
+            self._create_item_license(order_request.order_id, item)
+            for item in order_request.items
+        ]
+        
+        # Save licenses and return db keys
+        valid_keys = self.repository.save_licenses(licenses)
+        return valid_keys
     
     def activate_license(
             self,
