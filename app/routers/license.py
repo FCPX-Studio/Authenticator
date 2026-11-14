@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
+from paddle_billing.Exceptions.ApiError import ApiError
+from requests import RequestException
 
 from app.schemas.requests import PaddleTransactionCompletedEvent, ActivateLicenseRequest
 from app.schemas.user import LicenseToken
@@ -33,6 +35,7 @@ async def create(body: PaddleTransactionCompletedEvent, request: Request) -> lis
         HTTPException: 401 for bad body signature
         HTTPException: 422 for paddle events other than `transaction.completed`
         HTTPException: 404 if an item references an unknown product license
+        HTTPException: 502 if the customer cannot be retrieved from Paddle API
     """
     paddle: Paddle = request.app.state.paddle
     licensing: Licensing = request.app.state.licensing
@@ -45,9 +48,18 @@ async def create(body: PaddleTransactionCompletedEvent, request: Request) -> lis
         )
     
     # Retrieve user
-    customer = await paddle.get_customer(
-        body.data.customer_id
-    )
+    try:
+        customer = await paddle.get_customer(body.data.customer_id)
+    except ApiError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Cannot retrieve Paddle customer '{body.data.customer_id}': {e.error_code}"
+        )
+    except RequestException:
+        raise HTTPException(
+            status_code=502,
+            detail="Paddle API unreachable"
+        )
 
     # Create license
     try:
