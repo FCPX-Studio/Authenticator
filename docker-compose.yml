@@ -6,21 +6,38 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
-    # Serve HTTPS directly with a self-signed cert (see README for generating ./certs)
-    command:
-      - uvicorn
-      - app.main:app
-      - --host=0.0.0.0
-      - --port=8000
-      - --ssl-certfile=/app/certs/cert.pem
-      - --ssl-keyfile=/app/certs/key.pem
-    volumes:
-      - ./certs:/app/certs:ro
-    ports:
-      - "443:8000"
+    # Plain HTTP on 8000, only reachable by Caddy (no published ports)
+    restart: unless-stopped
     networks:
       - internal-db-network
+      - web
+
+  # Public entrypoint: HTTPS with Let's Encrypt certificates (see Caddyfile)
+  caddy:
+    container_name: caddy
+    image: caddy:2.10
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Must persist: holds certificates and ACME account (avoids rate limits)
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - authenticator
+    restart: unless-stopped
+    networks:
+      - web
 
 networks:
   internal-db-network:
     external: true
+  web:
+
+volumes:
+  caddy_data:
+  caddy_config:

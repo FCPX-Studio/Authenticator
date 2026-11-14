@@ -1,0 +1,16 @@
+# Caddy terminates HTTPS with an auto-renewed Let's Encrypt certificate
+# and forwards plain HTTP to the API container.
+#
+# SITE_ADDRESS (from .env) is the VPS public IP for now, e.g. 51.x.x.x.
+# Let's Encrypt only issues IP certificates under the "shortlived" profile
+# (~6 days); Caddy renews them automatically.
+# When a domain is ready, set SITE_ADDRESS=api.example.com — the tls block
+# can then be removed to get regular 90-day certificates.
+{$SITE_ADDRESS} {
+	tls {
+		issuer acme {
+			profile shortlived
+		}
+	}
+	reverse_proxy authenticator:8000
+}

@@ -87,18 +87,20 @@ Interactive API docs are served at `http://localhost:8000/docs`.
 
 ### Deploy (Docker, HTTPS)
 
-The container serves HTTPS on port 443 with a self-signed certificate. Generate it once on the VPS, next to `docker-compose.yml` (replace `<VPS-IP>`):
+[Caddy](https://caddyserver.com) sits in front of the API. It gets a trusted Let's Encrypt certificate and renews it automatically, then forwards traffic to the API over plain HTTP on the internal Docker network. The API container publishes no ports.
+
+1. In `.env`, set `SITE_ADDRESS` to the VPS public IPv4 address (e.g. `SITE_ADDRESS=51.x.x.x`).
+2. Open ports **80** and **443** (TCP, plus 443/UDP for HTTP/3) in `ufw` and in the OVH network firewall. Port 80 is required for the Let's Encrypt challenge.
+3. Start the stack:
 
 ```bash
-mkdir -p certs
-openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
-  -keyout certs/key.pem -out certs/cert.pem \
-  -subj "/CN=<VPS-IP>" -addext "subjectAltName=IP:<VPS-IP>"
-sudo chown 1000:1000 certs/key.pem && chmod 600 certs/key.pem
 docker compose up -d --build
+docker compose logs -f caddy   # wait for "certificate obtained successfully"
 ```
 
-The API is then at `https://<VPS-IP>/`. Clients must trust or pin `certs/cert.pem`; it is git-ignored and never baked into the image.
+The API is then at `https://<VPS-IP>/`, with no browser warning. Let's Encrypt only issues IP-address certificates under the short-lived profile (about 6 days), and Caddy renews them automatically. The `caddy_data` volume holds the certificates; don't delete it, or every restart will request new ones and can hit rate limits.
+
+**Switching to a domain later:** add an `A` record pointing to the VPS IP, set `SITE_ADDRESS=api.example.com` in `.env`, and run `docker compose up -d`. The `tls { ... }` block in the `Caddyfile` can then be removed to get regular 90-day certificates.
 
 ---
 
