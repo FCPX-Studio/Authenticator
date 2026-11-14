@@ -18,6 +18,11 @@ services:
     image: caddy:2.10
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env}
+    # The host's resolver (systemd-resolved, 127.0.0.53) is unreachable from
+    # inside the container, so use public resolvers to reach Let's Encrypt.
+    dns:
+      - 213.186.33.99 # OVH
+      - 1.1.1.1
     ports:
       - "80:80"
       - "443:443"
