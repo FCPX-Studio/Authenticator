@@ -197,12 +197,12 @@ app/
 ├── schemas/                     Pydantic models, request bodies, domain exceptions
 └── db/
     ├── database.py              Engine, session factory, transactional sessions
-    ├── models/                  SQLAlchemy tables: licenses, license_activations
+    ├── models/                  SQLAlchemy tables: UserLicense, UserActivation
     └── repositories/            LicenseRepository (data access)
 config.py                        Settings loaded from environment / .env
 ```
 
 ### Data model
 
-- **`licenses`**: `id` (`lic_…`), `license_key` (unique), `product_id`, `activation_limit`, `expires_at`, `customer_email`, `order_id`, `created_at`
-- **`license_activations`**: `id` (`act_…`), `license_id` → `licenses`, `machine_fingerprint` (unique per license), `machine_name`, `app_version`, `fcpx_version`, `macos_version`, `created_at`, `last_activated_at`
+- **`UserLicense`**: `id` (`lic_…`), `license_key` (unique), `product_id`, `activation_limit`, `expires_at`, `customer_email`, `order_id`, `item_id`, `created_at`
+- **`UserActivation`**: `id` (`act_…`), `license_id` → `UserLicense`, `machine_fingerprint` (unique per license), `machine_name`, `app_version`, `fcpx_version`, `macos_version`, `created_at`, `last_activated_at`

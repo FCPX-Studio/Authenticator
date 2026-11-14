@@ -23,3 +23,8 @@ class ActivationLimitReachedError(Exception):
         self.license_key = license_key
         self.activation_limit = activation_limit
         super().__init__(f"Activations limit reached ({activation_limit}) for license '{license_key}'")
+
+class ProductLicenseNotFoundError(Exception):
+    def __init__(self, product_license_id: str) -> None:
+        self.product_license_id = product_license_id
+        super().__init__(f"Unknown product license '{product_license_id}'")

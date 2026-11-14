@@ -1,5 +1,5 @@
 from config import settings
-from app.schemas.license import SignedActivation
+from app.schemas.user import SignedActivation
 
 import secrets
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey

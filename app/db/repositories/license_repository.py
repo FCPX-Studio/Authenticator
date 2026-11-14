@@ -1,8 +1,8 @@
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, joinedload, sessionmaker
 from app.db.database import Database
-from app.db.models.license import LicenseRow, LicenseActivationRow
+from app.db.models.users import UserRow, UserLicenseRow, UserActivationRow, UserMachineRow
 
-from app.schemas.license import License, LicenseActivation
+from app.schemas.user import User, UserLicense, UserActivation
 from app.schemas.exceptions import InvalideLicenseKeyError, ActivationNotFoundError
 
 from typing import Optional
@@ -20,29 +20,29 @@ class LicenseRepository(Database):
     # --- MAPPING
 
     @staticmethod
-    def _to_license(row: LicenseRow) -> License:
-        return License(
+    def _to_license(row: UserLicenseRow) -> UserLicense:
+        return UserLicense(
             id=row.id,
             key=row.license_key,
             product_id=row.product_id,
-            activation_limit=row.activation_limit,
-            customer_email=row.customer_email,  # type: ignore[arg-type]
-            order_id=row.order_id,  # type: ignore[arg-type]
-            item_id=row.item_id,  # type: ignore[arg-type]
+            product_license_id=row.product_license_id,
+            order_id=row.order_id,
+            user_id=row.user_id,
+            activation_seats=row.activation_seats,
             created_at=row.created_at,
             expires_at=row.expires_at,  # type: ignore[arg-type]
         )
 
     @staticmethod
-    def _to_activation(row: LicenseActivationRow) -> LicenseActivation:
-        return LicenseActivation(
+    def _to_activation(row: UserActivationRow) -> UserActivation:
+        # Machine must be loaded (joinedload) or the row still attached to a session
+        return UserActivation(
             id=row.id,
-            machine_fingerprint=row.machine_fingerprint,
-            machine_name=row.machine_name,  # type: ignore[arg-type]
+            machine_fingerprint=row.machine.machine_fingerprint,
+            machine_name=row.machine.machine_name,  # type: ignore[arg-type]
             app_version=row.app_version,  # type: ignore[arg-type]
             fcpx_version=row.fcpx_version,
             macos_version=row.macos_version,
-            created_at=row.created_at,
             last_activated_at=row.last_activated_at,
         )
 
@@ -59,9 +59,9 @@ class LicenseRepository(Database):
             bool: Exists in DB
         """
         with self.session() as s:
-            return bool(s.scalar(select(exists().where(LicenseRow.license_key == license_key))))
+            return bool(s.scalar(select(exists().where(UserLicenseRow.license_key == license_key))))
 
-    def get_license(self, license_key: str) -> Optional[License]:
+    def get_license(self, license_key: str) -> Optional[UserLicense]:
         """
         Retrieve a license from its key
 
@@ -72,10 +72,10 @@ class LicenseRepository(Database):
             Optional[License]: Corresponding license, None if the key is unknown
         """
         with self.session() as s:
-            row = s.scalar(select(LicenseRow).where(LicenseRow.license_key == license_key))
+            row = s.scalar(select(UserLicenseRow).where(UserLicenseRow.license_key == license_key))
             return self._to_license(row) if row else None
 
-    def get_order_licenses(self, order_id: str) -> Optional[list[License]]:
+    def get_order_licenses(self, order_id: str) -> Optional[list[UserLicense]]:
         """
         Retrieve every license created for an order
 
@@ -87,13 +87,13 @@ class LicenseRepository(Database):
         """
         with self.session() as s:
             rows = s.scalars(
-                select(LicenseRow)
-                .where(LicenseRow.order_id == order_id)
-                .order_by(LicenseRow.created_at, LicenseRow.id)
+                select(UserLicenseRow)
+                .where(UserLicenseRow.order_id == order_id)
+                .order_by(UserLicenseRow.created_at, UserLicenseRow.id)
             ).all()
             return [self._to_license(r) for r in rows] or None
 
-    def get_license_activations(self, license_key: str) -> list[LicenseActivation]:
+    def get_license_activations(self, license_key: str) -> list[UserActivation]:
         """
         Retrieve activations of a license
 
@@ -105,10 +105,11 @@ class LicenseRepository(Database):
         """
         with self.session() as s:
             rows = s.scalars(
-                select(LicenseActivationRow)
-                .join(LicenseActivationRow.license)
-                .where(LicenseRow.license_key == license_key)
-                .order_by(LicenseActivationRow.created_at)
+                select(UserActivationRow)
+                .join(UserActivationRow.license)
+                .options(joinedload(UserActivationRow.machine))
+                .where(UserLicenseRow.license_key == license_key)
+                .order_by(UserActivationRow.last_activated_at)
             ).all()
             return [self._to_activation(r) for r in rows]
 
@@ -117,7 +118,7 @@ class LicenseRepository(Database):
     def update_activation(
             self,
             activation_id: str,
-            activation: LicenseActivation
+            activation: UserActivation
         ) -> str:
         """
         Update informations for a specific activation
@@ -135,15 +136,15 @@ class LicenseRepository(Database):
         """
         with self.session() as s:
             updated_id = s.scalar(
-                update(LicenseActivationRow)
-                .where(LicenseActivationRow.id == activation_id)
+                update(UserActivationRow)
+                .where(UserActivationRow.id == activation_id)
                 .values(
                     app_version=activation.app_version,
                     fcpx_version=activation.fcpx_version,
                     macos_version=activation.macos_version,
                     last_activated_at=func.now(),
                 )
-                .returning(LicenseActivationRow.id)
+                .returning(UserActivationRow.id)
             )
             if updated_id is None:
                 raise ActivationNotFoundError(activation_id)
@@ -151,33 +152,54 @@ class LicenseRepository(Database):
 
     # --- WRITE
 
-    def save_licenses(self, licenses: list[License]) -> list[str]:
+    def save_licenses(self, users: list[User], licenses: list[UserLicense]) -> list[str]:
         """
-        Save licenses in DB, in a single transaction (all or nothing)
-        If a license already exists for the same order and line item, it is left
+        Save the license owners then their licenses, in a single transaction (all or nothing)
+        An existing user is updated (email, name, marketing), subscribed_at is kept
+        If a license already exists for the same order and product license, it is left
         untouched and the key of the existing license is returned instead
 
         Args:
-            licenses (list[License]): Licenses to save
+            users (list[User]): Owners of the licenses, written before the licenses (FK)
+            licenses (list[UserLicense]): Licenses to save
 
         Returns:
             list[str]: Stored license keys, in the same order as `licenses`
 
         Raises:
-            IntegrityError: Any other constraint violation (e.g. license key collision),
-                the whole transaction is rolled back
+            IntegrityError: Any other constraint violation (e.g. license key collision,
+                email already used by another user), the whole transaction is rolled back
         """
         keys: list[str] = []
 
         with self.session() as s:
+            for user in users:
+                # subscribed_at is never sent: set by the DB on first insert, kept on update
+                stmt = insert(UserRow).values(
+                    id=user.id,
+                    email=user.email,
+                    name=user.name,
+                    marketing=user.marketing,
+                )
+                s.execute(
+                    stmt.on_conflict_do_update(
+                        index_elements=[UserRow.id],
+                        set_=dict(
+                            email=stmt.excluded.email,
+                            name=stmt.excluded.name,
+                            marketing=stmt.excluded.marketing,
+                        ),
+                    )
+                )
+
             for license in licenses:
                 values = dict(
                     license_key=license.key,
-                    product_id=license.product_id,
-                    activation_limit=license.activation_limit,
-                    customer_email=license.customer_email,
+                    product_license_id=license.product_license_id,
                     order_id=license.order_id,
-                    item_id=license.item_id,
+                    user_id=license.user_id,
+                    product_id=license.product_id,
+                    activation_seats=license.activation_seats,
                     created_at=license.created_at,
                     expires_at=license.expires_at,
                 )
@@ -185,18 +207,18 @@ class LicenseRepository(Database):
                     values["id"] = license.id
 
                 inserted_key = s.scalar(
-                    insert(LicenseRow)
+                    insert(UserLicenseRow)
                     .values(**values)
-                    .on_conflict_do_nothing(constraint="uq_licenses_order_item")
-                    .returning(LicenseRow.license_key)
+                    .on_conflict_do_nothing(constraint="uq_UserLicense_order_product_license")
+                    .returning(UserLicenseRow.license_key)
                 )
 
                 if inserted_key is None:
                     # Already exists: keep the original license and return its key
                     inserted_key = s.scalar(
-                        select(LicenseRow.license_key).where(
-                            LicenseRow.order_id == license.order_id,
-                            LicenseRow.item_id == license.item_id,
+                        select(UserLicenseRow.license_key).where(
+                            UserLicenseRow.order_id == license.order_id,
+                            UserLicenseRow.product_license_id == license.product_license_id,
                         )
                     )
                     assert inserted_key is not None  # conflict guarantees the row exists
@@ -205,9 +227,11 @@ class LicenseRepository(Database):
 
         return keys
 
-    def save_activation(self, license_key: str, activation: LicenseActivation) -> str:
+    def save_activation(self, license_key: str, activation: UserActivation) -> str:
         """
-        Save a activation in DB
+        Save a activation in DB, in a single transaction
+        The machine is created from its fingerprint, or its name refreshed if already known
+        (a machine is shared by every license activated on it)
         If this machine is already activated on the license, the existing row is
         refreshed instead (one seat per machine, safe against concurrent requests)
 
@@ -222,14 +246,25 @@ class LicenseRepository(Database):
             InvalideLicenseKeyError: Unknown license key
         """
         with self.session() as s:
-            license_id = s.scalar(select(LicenseRow.id).where(LicenseRow.license_key == license_key))
+            license_id = s.scalar(select(UserLicenseRow.id).where(UserLicenseRow.license_key == license_key))
             if license_id is None:
                 raise InvalideLicenseKeyError(license_key)
 
-            values = dict(
-                license_id=license_id,
+            # Upsert the machine on its fingerprint and get its ID back
+            machine_stmt = insert(UserMachineRow).values(
                 machine_fingerprint=activation.machine_fingerprint,
                 machine_name=activation.machine_name,
+            )
+            machine_id = s.execute(
+                machine_stmt.on_conflict_do_update(
+                    index_elements=[UserMachineRow.machine_fingerprint],
+                    set_=dict(machine_name=machine_stmt.excluded.machine_name),
+                ).returning(UserMachineRow.id)
+            ).scalar_one()
+
+            values = dict(
+                license_id=license_id,
+                machine_id=machine_id,
                 app_version=activation.app_version,
                 fcpx_version=activation.fcpx_version,
                 macos_version=activation.macos_version,
@@ -237,16 +272,15 @@ class LicenseRepository(Database):
             if activation.id:
                 values["id"] = activation.id
 
-            stmt = insert(LicenseActivationRow).values(**values)
+            stmt = insert(UserActivationRow).values(**values)
             stmt = stmt.on_conflict_do_update(
-                constraint="uq_license_activations_license_machine",
+                constraint="uq_UserActivation_license_machine",
                 set_=dict(
-                    machine_name=stmt.excluded.machine_name,
                     app_version=stmt.excluded.app_version,
                     fcpx_version=stmt.excluded.fcpx_version,
                     macos_version=stmt.excluded.macos_version,
                     last_activated_at=func.now(),
                 ),
-            ).returning(LicenseActivationRow.id)
+            ).returning(UserActivationRow.id)
 
             return s.execute(stmt).scalar_one()
