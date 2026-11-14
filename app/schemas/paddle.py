@@ -1,6 +1,6 @@
 from app.schemas.user import User
 
-from pydantic import AwareDatetime, BaseModel
+from pydantic import AwareDatetime, BaseModel, Field
 from typing import Optional
 
 
@@ -31,3 +31,26 @@ class PaddleCustomer(BaseModel):
             name=name or None,
             marketing=self.marketing_consent,
         )
+
+
+# --- WEBHOOK: transaction.completed
+# Only the fields used for licensing are modeled, unknown fields are ignored
+
+class PaddlePrice(BaseModel):
+    """Price of a transaction item"""
+    id: str                                 # Paddle price ID (pri_…)
+    product_id: str                         # Paddle product ID (pro_…), matches ProductLicense.id
+
+
+class PaddleTransactionItem(BaseModel):
+    """Item of a transaction"""
+    price: PaddlePrice
+    quantity: int = Field(default=1, ge=1)
+
+
+class PaddleTransaction(BaseModel):
+    """Paddle Billing transaction entity (webhook `data`)"""
+    id: str                                 # Paddle transaction ID (txn_…), used as order ID
+    status: str                             # "completed" for transaction.completed
+    customer_id: str                        # Paddle customer ID (ctm_…), details fetched via API
+    items: list[PaddleTransactionItem]

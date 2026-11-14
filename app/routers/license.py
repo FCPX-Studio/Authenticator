@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
 
-from app.schemas.requests import OrderLicensesRequest, ActivateLicenseRequest
+from app.schemas.requests import PaddleTransactionCompletedEvent, ActivateLicenseRequest
 from app.schemas.user import LicenseToken
 from app.schemas.exceptions import (
     InvalideLicenseKeyError,
@@ -18,18 +18,20 @@ router = APIRouter(
 
 
 @router.post('/create')
-async def create(body: OrderLicensesRequest, request: Request) -> list[str]:
+async def create(body: PaddleTransactionCompletedEvent, request: Request) -> list[str]:
     """
     Create license keys for an order
 
     Args:
-        body (OrderLicensesRequest): Order ID and the Paddle products to license
+        body (PaddleTransactionCompletedEvent): Paddle transaction.completed body
         request (Request): Default request argument
 
     Returns:
         list[str]: License keys, in the same order as the items
 
     Raises:
+        HTTPException: 401 for bad body signature
+        HTTPException: 422 for paddle events other than `transaction.completed`
         HTTPException: 404 if an item references an unknown product license
     """
     paddle: Paddle = request.app.state.paddle
@@ -41,10 +43,16 @@ async def create(body: OrderLicensesRequest, request: Request) -> list[str]:
             status_code=401,
             detail="Cannot validate webhook signature"
         )
+    
+    # Retrieve user
+    customer = await paddle.get_customer(
+        body.data.customer_id
+    )
 
     # Create license
     try:
-        license_keys = licensing.create_licenses(body)
+        order_request = body.build_order_request(customer)
+        license_keys = licensing.create_licenses(order_request)
     except ProductLicenseNotFoundError as e:
         raise HTTPException(
             status_code=404,

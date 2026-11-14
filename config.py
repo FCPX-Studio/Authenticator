@@ -4,6 +4,7 @@ Application configuration
 This module exposes a singleton `settings` instance that can be imported
 throughout the project (e.g., from config import settings).
 """
+from typing import Literal
 from urllib.parse import quote_plus
 
 from pydantic import SecretStr, computed_field
@@ -47,7 +48,9 @@ class AuthenticatorSettings(BaseSettings):
     LICENSE_PRIVATE_KEY: SecretStr
     LICENSE_TOKEN_FORMAT_VERSION: int = 1
 
-    # Webhook
+    # Paddle
+    PADDLE_API_KEY: SecretStr
+    PADDLE_ENVIRONMENT: Literal["sandbox", "production"] = "sandbox"
     PADDLE_ORDER_WEBHOOK_SECRET: SecretStr
 
 
