@@ -2,6 +2,7 @@ from pydantic import AwareDatetime, BaseModel
 
 from typing import Optional
 
+
 class User(BaseModel):
     id: str
     email: str
