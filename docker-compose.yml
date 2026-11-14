@@ -6,6 +6,8 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+    ports:
+      - "8000:8000"
     networks:
       - internal-db-network
 
