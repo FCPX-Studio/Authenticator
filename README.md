@@ -85,6 +85,21 @@ Database tables are created automatically on startup. Existing tables are never 
 
 Interactive API docs are served at `http://localhost:8000/docs`.
 
+### Deploy (Docker, HTTPS)
+
+The container serves HTTPS on port 443 with a self-signed certificate. Generate it once on the VPS, next to `docker-compose.yml` (replace `<VPS-IP>`):
+
+```bash
+mkdir -p certs
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+  -keyout certs/key.pem -out certs/cert.pem \
+  -subj "/CN=<VPS-IP>" -addext "subjectAltName=IP:<VPS-IP>"
+sudo chown 1000:1000 certs/key.pem && chmod 600 certs/key.pem
+docker compose up -d --build
+```
+
+The API is then at `https://<VPS-IP>/`. Clients must trust or pin `certs/cert.pem`; it is git-ignored and never baked into the image.
+
 ---
 
 ## API
