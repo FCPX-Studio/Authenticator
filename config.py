@@ -47,6 +47,9 @@ class AuthenticatorSettings(BaseSettings):
     LICENSE_PRIVATE_KEY: SecretStr
     LICENSE_TOKEN_FORMAT_VERSION: int = 1
 
+    # Webhook
+    PADDLE_ORDER_WEBHOOK_SECRET: SecretStr
+
 
 
 settings = AuthenticatorSettings() # type: ignore

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from config import settings
 
 from app.routers import license
-from app.services.licensing import Licensing
+from app.services import Licensing, Paddle
 
 
 
@@ -13,11 +13,13 @@ from app.services.licensing import Licensing
 async def lifespan(app: FastAPI):
     # --- startup logic ---
     app.state.licensing = Licensing()
+    app.state.paddle = Paddle()
 
     yield
 
     # --- shutdown logic ---
     del app.state.licensing
+    del app.state.paddle
 
 
 app = FastAPI(

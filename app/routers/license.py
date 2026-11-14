@@ -8,7 +8,7 @@ from app.schemas.exceptions import (
     ActivationLimitReachedError,
     ProductLicenseNotFoundError,
 )
-from app.services.licensing import Licensing
+from app.services import Licensing, Paddle
 
 
 router = APIRouter(
@@ -32,11 +32,17 @@ async def create(body: OrderLicensesRequest, request: Request) -> list[str]:
     Raises:
         HTTPException: 404 if an item references an unknown product license
     """
+    paddle: Paddle = request.app.state.paddle
     licensing: Licensing = request.app.state.licensing
 
-    #TODO: Protect access 
-    # (/create can only be called from fcpxstudio webside when a product is bought)
+    # Certify request comes from Paddle webhook
+    if not await paddle.validate_webhook_signature(request):
+        raise HTTPException(
+            status_code=401,
+            detail="Cannot validate webhook signature"
+        )
 
+    # Create license
     try:
         license_keys = licensing.create_licenses(body)
     except ProductLicenseNotFoundError as e:
