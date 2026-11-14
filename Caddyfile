@@ -6,6 +6,13 @@
 # (~6 days); Caddy renews them automatically.
 # When a domain is ready, set SITE_ADDRESS=api.example.com — the tls block
 # can then be removed to get regular 90-day certificates.
+
+{
+	# Clients connecting by IP send no SNI (IPs aren't allowed in SNI), so
+	# tell Caddy which certificate to use for them. Harmless with a domain.
+	default_sni {$SITE_ADDRESS}
+}
+
 {$SITE_ADDRESS} {
 	tls {
 		issuer acme {
